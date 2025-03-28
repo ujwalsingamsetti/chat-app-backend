@@ -3,9 +3,9 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-  "start": "node index.js",
-  "postinstall": "npm rebuild bcrypt sqlite3"
-},
+    "start": "node index.js",
+    "postinstall": "npm rebuild bcrypt sqlite3"
+  },
   "keywords": [],
   "author": "",
   "license": "ISC",
@@ -16,8 +16,8 @@
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
     "jsonwebtoken": "^9.0.2",
-    "socket.io": "^4.8.1",
-    "sqlite3": "^5.1.7"
+    "mongoose": "^8.13.0",
+    "socket.io": "^4.8.1"
   },
   "engines": {
     "node": "18.x"

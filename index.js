@@ -1,54 +1,66 @@
 const express = require('express');
 const { Server } = require('socket.io');
 const jwt = require('jsonwebtoken');
-const sqlite3 = require('sqlite3').verbose();
 const bcrypt = require('bcrypt');
 const cors = require('cors');
+const mongoose = require('mongoose');
 require('dotenv').config();
+
+// Global error handling
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught Exception:', err);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+});
 
 // Initialize Express app
 const app = express();
 app.use(express.json());
-app.use(cors({ origin: 'http://localhost:3000' }));
+app.use(cors({
+  origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+  credentials: true,
+}));
 
-// Initialize SQLite database
-const db = new sqlite3.Database('./chat.db', (err) => {
-  if (err) {
-    console.error('Database connection error:', err);
-  } else {
-    console.log('Connected to SQLite database');
-    // Create users table
-    db.run(`CREATE TABLE IF NOT EXISTS users (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      username TEXT UNIQUE,
-      password TEXT
-    )`);
-    // Create messages table
-    db.run(`CREATE TABLE IF NOT EXISTS messages (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      userId TEXT,
-      recipientId TEXT,
-      message TEXT,
-      timestamp TEXT
-    )`);
-    // Create reactions table
-    db.run(`CREATE TABLE IF NOT EXISTS reactions (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      messageId INTEGER,
-      userId TEXT,
-      reaction TEXT
-    )`);
-  }
+// Connect to MongoDB
+console.log('Connecting to MongoDB...');
+mongoose.connect(process.env.MONGODB_URI, {
+  useNewUrlParser: true,
+  useUnifiedTopology: true,
+})
+.then(() => console.log('MongoDB connected'))
+.catch(err => console.error('MongoDB connection error:', err));
+
+// MongoDB Schemas
+const userSchema = new mongoose.Schema({
+  username: { type: String, unique: true },
+  password: String,
+});
+const messageSchema = new mongoose.Schema({
+  userId: String,
+  recipientId: String,
+  message: String,
+  timestamp: String,
+});
+const reactionSchema = new mongoose.Schema({
+  messageId: String,
+  userId: String,
+  reaction: String,
+  username: String,
 });
 
-// Initialize Socket.IO server
-const server = app.listen(5500, () => {
-  console.log('Server running on port 5500');
-});
+const User = mongoose.model('User', userSchema);
+const Message = mongoose.model('Message', messageSchema);
+const Reaction = mongoose.model('Reaction', reactionSchema);
+
+// Initialize server
+const server = require('http').createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: 'http://localhost:3000',
-    methods: ['GET', 'POST']
+    origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+    methods: ['GET', 'POST'],
+    credentials: true,
   }
 });
 
@@ -76,32 +88,31 @@ app.post('/register', async (req, res) => {
     return res.status(400).json({ message: 'Username and password required' });
   }
 
-  const hashedPassword = await bcrypt.hash(password, 10);
-  db.run(
-    'INSERT INTO users (username, password) VALUES (?, ?)',
-    [username, hashedPassword],
-    (err) => {
-      if (err) {
-        console.error('Register error:', err);
-        return res.status(400).json({ message: 'Username already exists' });
-      }
-      res.status(201).json({ message: 'User registered successfully' });
+  try {
+    const existingUser = await User.findOne({ username });
+    if (existingUser) {
+      return res.status(400).json({ message: 'Username already exists' });
     }
-  );
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const user = new User({ username, password: hashedPassword });
+    await user.save();
+    res.status(201).json({ message: 'User registered successfully' });
+  } catch (err) {
+    console.error('Register error:', err);
+    res.status(500).json({ message: 'Server error' });
+  }
 });
 
 // Login endpoint
-app.post('/login', (req, res) => {
+app.post('/login', async (req, res) => {
   const { username, password } = req.body;
   if (!username || !password) {
     return res.status(400).json({ message: 'Username and password required' });
   }
 
-  db.get('SELECT * FROM users WHERE username = ?', [username], async (err, user) => {
-    if (err) {
-      console.error('Login error:', err);
-      return res.status(500).json({ message: 'Server error' });
-    }
+  try {
+    const user = await User.findOne({ username });
     if (!user) {
       return res.status(400).json({ message: 'Invalid username or password' });
     }
@@ -112,61 +123,60 @@ app.post('/login', (req, res) => {
     }
 
     const token = jwt.sign(
-      { id: user.id, username: user.username },
+      { id: user._id, username: user.username },
       process.env.JWT_SECRET || 'your_secret_key_here',
       { expiresIn: '1h' }
     );
     res.json({ token });
-  });
+  } catch (err) {
+    console.error('Login error:', err);
+    res.status(500).json({ message: 'Server error' });
+  }
 });
 
 // Fetch messages endpoint
-app.get('/messages', authenticateToken, (req, res) => {
+app.get('/messages', authenticateToken, async (req, res) => {
   const { recipientId } = req.query;
   const userId = req.user.id;
 
-  let query = 'SELECT m.*, u.username FROM messages m JOIN users u ON m.userId = u.id WHERE recipientId IS NULL';
-  let params = [];
+  try {
+    let query = { recipientId: null };
+    if (recipientId) {
+      query = {
+        $or: [
+          { userId: userId, recipientId },
+          { userId: recipientId, recipientId: userId },
+        ],
+      };
+    }
 
-  if (recipientId) {
-    query = `
-      SELECT m.*, u.username 
-      FROM messages m 
-      JOIN users u ON m.userId = u.id 
-      WHERE (m.userId = ? AND m.recipientId = ?) OR (m.userId = ? AND m.recipientId = ?)
-    `;
-    params = [userId, recipientId, recipientId, userId];
+    const messages = await Message.find(query).lean();
+    const messageIds = messages.map(m => m._id.toString());
+
+    const users = await User.find({ _id: { $in: messages.map(m => m.userId) } }).lean();
+    const userMap = users.reduce((acc, user) => {
+      acc[user._id] = user.username;
+      return acc;
+    }, {});
+
+    let reactions = [];
+    if (messageIds.length > 0) {
+      reactions = await Reaction.find({ messageId: { $in: messageIds } }).lean();
+    }
+
+    const messagesWithReactions = messages.map(message => ({
+      ...message,
+      id: message._id.toString(),
+      username: userMap[message.userId] || 'Unknown',
+      reactions: reactions
+        .filter(r => r.messageId === message._id.toString())
+        .map(r => ({ ...r, messageId: r.messageId.toString() })),
+    }));
+    res.json(messagesWithReactions);
+  } catch (err) {
+    console.error('Fetch messages error:', err);
+    res.status(500).json({ message: 'Server error' });
   }
-
-  db.all(query, params, (err, messages) => {
-    if (err) {
-      console.error('Fetch messages error:', err);
-      return res.status(500).json({ message: 'Server error' });
-    }
-
-    // Fetch reactions for each message
-    const messageIds = messages.map(m => m.id);
-    if (messageIds.length === 0) {
-      return res.json(messages);
-    }
-
-    db.all(
-      'SELECT r.*, u.username FROM reactions r JOIN users u ON r.userId = u.id WHERE r.messageId IN (' + messageIds.map(() => '?').join(',') + ')',
-      messageIds,
-      (err, reactions) => {
-        if (err) {
-          console.error('Fetch reactions error:', err);
-          return res.status(500).json({ message: 'Server error' });
-        }
-
-        const messagesWithReactions = messages.map(message => ({
-          ...message,
-          reactions: reactions.filter(r => r.messageId === message.id)
-        }));
-        res.json(messagesWithReactions);
-      }
-    );
-  });
 });
 
 // Socket.IO Logic
@@ -197,51 +207,53 @@ io.on('connection', (socket) => {
   // Join user-specific room for private messaging
   socket.join(`user-${socket.user.id}`);
 
-  socket.on('sendMessage', ({ message, recipientId }) => {
+  socket.on('sendMessage', async ({ message, recipientId }) => {
     console.log('Message received from', socket.user.username, 'to', recipientId ? `user ${recipientId}` : 'public', ':', message);
     const timestamp = new Date().toISOString();
-    db.run(
-      'INSERT INTO messages (userId, recipientId, message, timestamp) VALUES (?, ?, ?, ?)',
-      [socket.user.id, recipientId || null, message, timestamp],
-      function (err) {
-        if (err) {
-          console.error('Database insert error:', err);
-          socket.emit('error', { message: 'Failed to send message' });
-        } else {
-          const msgData = {
-            id: this.lastID,
-            username: socket.user.username,
-            message,
-            recipientId,
-            timestamp,
-            reactions: []
-          };
-          console.log('Emitting newMessage:', msgData);
-          if (recipientId) {
-            socket.to(`user-${recipientId}`).emit('newMessage', msgData);
-            socket.emit('newMessage', msgData); // Send back to sender
-          } else {
-            io.emit('newMessage', msgData); // Public message
-          }
-        }
+    try {
+      const msg = new Message({
+        userId: socket.user.id,
+        recipientId: recipientId || null,
+        message,
+        timestamp,
+      });
+      await msg.save();
+
+      const msgData = {
+        id: msg._id.toString(),
+        username: socket.user.username,
+        message,
+        recipientId,
+        timestamp,
+        reactions: [],
+      };
+      console.log('Emitting newMessage:', msgData);
+      if (recipientId) {
+        socket.to(`user-${recipientId}`).emit('newMessage', msgData);
+        socket.emit('newMessage', msgData); // Send back to sender
+      } else {
+        io.emit('newMessage', msgData); // Public message
       }
-    );
+    } catch (err) {
+      console.error('Database insert error:', err);
+      socket.emit('error', { message: 'Failed to send message' });
+    }
   });
 
-  socket.on('react', ({ messageId, reaction }) => {
-    db.run(
-      'INSERT INTO reactions (messageId, userId, reaction) VALUES (?, ?, ?)',
-      [messageId, socket.user.id, reaction],
-      (err) => {
-        if (err) {
-          console.error('Reaction insert error:', err);
-          socket.emit('error', { message: 'Failed to add reaction' });
-        } else {
-          const reactionData = { messageId, reaction, username: socket.user.username };
-          io.emit('newReaction', reactionData);
-        }
-      }
-    );
+  socket.on('react', async ({ messageId, reaction }) => {
+    try {
+      const reactionData = new Reaction({
+        messageId,
+        userId: socket.user.id,
+        reaction,
+        username: socket.user.username,
+      });
+      await reactionData.save();
+      io.emit('newReaction', { messageId, reaction, username: socket.user.username });
+    } catch (err) {
+      console.error('Reaction insert error:', err);
+      socket.emit('error', { message: 'Failed to add reaction' });
+    }
   });
 
   socket.on('typing', ({ recipientId }) => {
@@ -265,4 +277,10 @@ io.on('connection', (socket) => {
     onlineUsers = onlineUsers.filter(u => u.id !== socket.user.id);
     io.emit('onlineUsers', onlineUsers);
   });
+});
+
+// Start the server
+const PORT = process.env.PORT || 5500;
+server.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
 });
