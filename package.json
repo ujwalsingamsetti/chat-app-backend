@@ -4,7 +4,7 @@
   "main": "index.js",
   "scripts": {
   "start": "node index.js",
-  "postinstall": "npm rebuild sqlite3"
+  "postinstall": "npm rebuild bcrypt sqlite3"
 },
   "keywords": [],
   "author": "",
