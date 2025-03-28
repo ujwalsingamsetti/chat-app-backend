@@ -6,6 +6,9 @@ const cors = require('cors');
 const mongoose = require('mongoose');
 require('dotenv').config();
 
+console.log('All environment variables:', process.env);
+console.log('MONGODB_URI:', process.env.MONGODB_URI);
+console.log('JWT_SECRET:', process.env.JWT_SECRET);
 // Global error handling
 process.on('uncaughtException', (err) => {
   console.error('Uncaught Exception:', err);
@@ -15,7 +18,7 @@ process.on('unhandledRejection', (reason, promise) => {
   console.error('Unhandled Rejection at:', promise, 'reason:', reason);
 });
 
-// Initialize Express app
+
 const app = express();
 app.use(express.json());
 app.use(cors({
@@ -24,7 +27,7 @@ app.use(cors({
 }));
 
 // Connect to MongoDB
-console.log('Connecting to MongoDB...');
+console.log('Attempting to connect to MongoDB with URI:', process.env.MONGODB_URI);
 mongoose.connect(process.env.MONGODB_URI, {
   useNewUrlParser: true,
   useUnifiedTopology: true,
