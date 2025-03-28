@@ -3,8 +3,9 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
-  },
+  "start": "node index.js",
+  "postinstall": "npm rebuild sqlite3"
+},
   "keywords": [],
   "author": "",
   "license": "ISC",
@@ -19,6 +20,9 @@
     "sqlite3": "^5.1.7"
   },
   "engines": {
-  "node": "18.x"
-}
+    "node": "18.x"
+  },
+  "devDependencies": {
+    "node-gyp": "^11.1.0"
+  }
 }
