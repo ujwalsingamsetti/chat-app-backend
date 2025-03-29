@@ -21,8 +21,9 @@ process.on('unhandledRejection', (reason, promise) => {
 
 
 const app = express();
-app.use(express.json()); // Keep this if your routes need JSON parsing
+//app.use(express.json()); // Keep this if your routes need JSON parsing
 app.get('/', (req, res) => {
+  console.log('Handling GET / request');
   res.status(200).send('Hello from the server!');
 });
 
