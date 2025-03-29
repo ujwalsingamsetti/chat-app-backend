@@ -21,6 +21,9 @@ process.on('unhandledRejection', (reason, promise) => {
 
 
 const app = express();
+app.get('/', (req, res) => {
+  res.status(200).send('Hello from the server!');
+});
 app.use((req, res, next) => {
   console.log(`Received request: ${req.method} ${req.url}`);
   next();
