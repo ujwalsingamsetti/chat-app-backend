@@ -32,6 +32,7 @@ app.use((req, res, next) => {
 app.get('/', (req, res) => {
   console.log('Handling GET / request');
   res.status(200).send('Hello from the server!');
+  console.log('Response sent: Hello from the server!');
 });
 
 // Connect to MongoDB
