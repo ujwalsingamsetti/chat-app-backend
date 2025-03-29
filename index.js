@@ -18,6 +18,10 @@ process.on('unhandledRejection', (reason, promise) => {
   console.error('Unhandled Rejection at:', promise, 'reason:', reason);
 });
 
+app.use((req, res, next) => {
+  console.log(`Received request: ${req.method} ${req.url}`);
+  next();
+});
 
 const app = express();
 app.use(express.json());
@@ -80,7 +84,7 @@ const authenticateToken = (req, res, next) => {
   });
 };
 
-// REST API Endpoints
+
 // Register endpoint
 app.post('/register', async (req, res) => {
   const { username, password } = req.body;
