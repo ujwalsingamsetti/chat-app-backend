@@ -114,6 +114,10 @@ app.post('/register', async (req, res) => {
     console.error('Register error:', err);
     res.status(500).json({ message: 'Server error' });
   }
+  app.use((req, res) => {
+    console.log('Catch-all route triggered for:', req.method, req.url);
+    res.status(404).send('Not Found');
+  });
 });
 
 // Login endpoint
@@ -144,6 +148,10 @@ app.post('/login', async (req, res) => {
     console.error('Login error:', err);
     res.status(500).json({ message: 'Server error' });
   }
+  app.use((req, res) => {
+    console.log('Catch-all route triggered for:', req.method, req.url);
+    res.status(404).send('Not Found');
+  });
 });
 
 // Fetch messages endpoint
