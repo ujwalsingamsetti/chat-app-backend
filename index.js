@@ -22,7 +22,7 @@ process.on('unhandledRejection', (reason, promise) => {
 const app = express();
 
 // Middleware
-app.use(express.json()); // Uncommented for endpoints like /register and /login
+// app.use(express.json()); // Uncommented for endpoints like /register and /login
 app.use((req, res, next) => {
   console.log(`Received request: ${req.method} ${req.url}`);
   next();
