@@ -22,21 +22,21 @@ process.on('unhandledRejection', (reason, promise) => {
 const app = express();
 
 // Middleware
-// app.use(express.json()); // Uncommented for endpoints like /register and /login
 app.use((req, res, next) => {
   console.log(`Received request: ${req.method} ${req.url}`);
   next();
 });
+app.use(express.json());
+app.use(cors({
+  origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+  credentials: true,
+}));
 
 // Root route
 app.get('/', (req, res) => {
   console.log('Handling GET / request');
   res.status(200).send('Hello from the server!');
   console.log('Response sent: Hello from the server!');
-  app.use((req, res) => {
-    console.log('Catch-all route triggered for:', req.method, req.url);
-    res.status(404).send('Not Found');
-  });
 });
 
 // Connect to MongoDB
@@ -114,10 +114,6 @@ app.post('/register', async (req, res) => {
     console.error('Register error:', err);
     res.status(500).json({ message: 'Server error' });
   }
-  app.use((req, res) => {
-    console.log('Catch-all route triggered for:', req.method, req.url);
-    res.status(404).send('Not Found');
-  });
 });
 
 // Login endpoint
@@ -148,10 +144,6 @@ app.post('/login', async (req, res) => {
     console.error('Login error:', err);
     res.status(500).json({ message: 'Server error' });
   }
-  app.use((req, res) => {
-    console.log('Catch-all route triggered for:', req.method, req.url);
-    res.status(404).send('Not Found');
-  });
 });
 
 // Fetch messages endpoint
@@ -197,10 +189,6 @@ app.get('/messages', authenticateToken, async (req, res) => {
     console.error('Fetch messages error:', err);
     res.status(500).json({ message: 'Server error' });
   }
-  app.use((req, res) => {
-    console.log('Catch-all route triggered for:', req.method, req.url);
-    res.status(404).send('Not Found');
-  });
 });
 
 // Socket.IO Logic
@@ -308,6 +296,12 @@ io.on('connection', (socket) => {
     onlineUsers = onlineUsers.filter((u) => u.id !== socket.user.id);
     io.emit('onlineUsers', onlineUsers);
   });
+});
+
+// Catch-all route (place at the end)
+app.use((req, res) => {
+  console.log('Catch-all route triggered for:', req.method, req.url);
+  res.status(404).send('Not Found');
 });
 
 // Start the server
