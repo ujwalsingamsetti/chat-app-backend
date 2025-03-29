@@ -33,6 +33,10 @@ app.get('/', (req, res) => {
   console.log('Handling GET / request');
   res.status(200).send('Hello from the server!');
   console.log('Response sent: Hello from the server!');
+  app.use((req, res) => {
+    console.log('Catch-all route triggered for:', req.method, req.url);
+    res.status(404).send('Not Found');
+  });
 });
 
 // Connect to MongoDB
@@ -185,6 +189,10 @@ app.get('/messages', authenticateToken, async (req, res) => {
     console.error('Fetch messages error:', err);
     res.status(500).json({ message: 'Server error' });
   }
+  app.use((req, res) => {
+    console.log('Catch-all route triggered for:', req.method, req.url);
+    res.status(404).send('Not Found');
+  });
 });
 
 // Socket.IO Logic
