@@ -9,6 +9,7 @@ require('dotenv').config();
 console.log('All environment variables:', process.env);
 console.log('MONGODB_URI:', process.env.MONGODB_URI);
 console.log('JWT_SECRET:', process.env.JWT_SECRET);
+
 // Global error handling
 process.on('uncaughtException', (err) => {
   console.error('Uncaught Exception:', err);
@@ -18,21 +19,26 @@ process.on('unhandledRejection', (reason, promise) => {
   console.error('Unhandled Rejection at:', promise, 'reason:', reason);
 });
 
-
-
 const app = express();
-//app.use(express.json()); // Keep this if your routes need JSON parsing
+
+// Middleware
+app.use(express.json()); // Uncommented for endpoints like /register and /login
+app.use((req, res, next) => {
+  console.log(`Received request: ${req.method} ${req.url}`);
+  next();
+});
+
+// Root route
 app.get('/', (req, res) => {
   console.log('Handling GET / request');
   res.status(200).send('Hello from the server!');
 });
 
-
 // Connect to MongoDB
 console.log('Attempting to connect to MongoDB with URI:', process.env.MONGODB_URI);
 mongoose.connect(process.env.MONGODB_URI)
-.then(() => console.log('MongoDB connected'))
-.catch(err => console.error('MongoDB connection error:', err));
+  .then(() => console.log('MongoDB connected'))
+  .catch(err => console.error('MongoDB connection error:', err));
 
 // MongoDB Schemas
 const userSchema = new mongoose.Schema({
@@ -63,7 +69,7 @@ const io = new Server(server, {
     origin: process.env.FRONTEND_URL || 'http://localhost:3000',
     methods: ['GET', 'POST'],
     credentials: true,
-  }
+  },
 });
 
 // Online users array (in-memory, consider Redis for production)
@@ -81,7 +87,6 @@ const authenticateToken = (req, res, next) => {
     next();
   });
 };
-
 
 // Register endpoint
 app.post('/register', async (req, res) => {
@@ -153,9 +158,9 @@ app.get('/messages', authenticateToken, async (req, res) => {
     }
 
     const messages = await Message.find(query).lean();
-    const messageIds = messages.map(m => m._id.toString());
+    const messageIds = messages.map((m) => m._id.toString());
 
-    const users = await User.find({ _id: { $in: messages.map(m => m.userId) } }).lean();
+    const users = await User.find({ _id: { $in: messages.map((m) => m.userId) } }).lean();
     const userMap = users.reduce((acc, user) => {
       acc[user._id] = user.username;
       return acc;
@@ -166,13 +171,13 @@ app.get('/messages', authenticateToken, async (req, res) => {
       reactions = await Reaction.find({ messageId: { $in: messageIds } }).lean();
     }
 
-    const messagesWithReactions = messages.map(message => ({
+    const messagesWithReactions = messages.map((message) => ({
       ...message,
       id: message._id.toString(),
       username: userMap[message.userId] || 'Unknown',
       reactions: reactions
-        .filter(r => r.messageId === message._id.toString())
-        .map(r => ({ ...r, messageId: r.messageId.toString() })),
+        .filter((r) => r.messageId === message._id.toString())
+        .map((r) => ({ ...r, messageId: r.messageId.toString() })),
     }));
     res.json(messagesWithReactions);
   } catch (err) {
@@ -201,7 +206,7 @@ io.on('connection', (socket) => {
   console.log('New user connected:', socket.id);
 
   // Add user to onlineUsers if not already present
-  if (!onlineUsers.some(u => u.id === socket.user.id)) {
+  if (!onlineUsers.some((u) => u.id === socket.user.id)) {
     onlineUsers.push({ id: socket.user.id, username: socket.user.username });
     io.emit('onlineUsers', onlineUsers);
   }
@@ -210,7 +215,14 @@ io.on('connection', (socket) => {
   socket.join(`user-${socket.user.id}`);
 
   socket.on('sendMessage', async ({ message, recipientId }) => {
-    console.log('Message received from', socket.user.username, 'to', recipientId ? `user ${recipientId}` : 'public', ':', message);
+    console.log(
+      'Message received from',
+      socket.user.username,
+      'to',
+      recipientId ? `user ${recipientId}` : 'public',
+      ':',
+      message
+    );
     const timestamp = new Date().toISOString();
     try {
       const msg = new Message({
@@ -276,7 +288,7 @@ io.on('connection', (socket) => {
 
   socket.on('disconnect', () => {
     console.log('User disconnected:', socket.id);
-    onlineUsers = onlineUsers.filter(u => u.id !== socket.user.id);
+    onlineUsers = onlineUsers.filter((u) => u.id !== socket.user.id);
     io.emit('onlineUsers', onlineUsers);
   });
 });
