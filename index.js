@@ -27,8 +27,20 @@ app.use((req, res, next) => {
   next();
 });
 app.use(express.json());
+const cors = require('cors');
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+  origin: (origin, callback) => {
+    const allowedOrigins = [
+      'http://localhost:3000', // For local development
+      'https://venerable-donut-3b4f8a.netlify.app', // Your Netlify domain
+      // Add your custom domain if you’ve set one up, e.g., 'https://www.yourdomain.com'
+    ];
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
   credentials: true,
 }));
 
