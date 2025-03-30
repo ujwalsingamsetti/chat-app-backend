@@ -82,7 +82,7 @@ const Reaction = mongoose.model('Reaction', reactionSchema);
 const server = require('http').createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+    origin: process.env.FRONTEND_URL || 'https://venerable-donut-3b4f8a.netlify.app',
     methods: ['GET', 'POST'],
     credentials: true,
   },
