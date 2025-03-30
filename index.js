@@ -27,7 +27,6 @@ app.use((req, res, next) => {
   next();
 });
 app.use(express.json());
-const cors = require('cors');
 app.use(cors({
   origin: (origin, callback) => {
     const allowedOrigins = [
