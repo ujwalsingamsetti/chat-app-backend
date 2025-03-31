@@ -130,6 +130,7 @@ app.post('/register', async (req, res) => {
   // ✅ Validate password before checking username
   const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
   if (!passwordRegex.test(password)) {
+    console.log("Weak password detected:", password);
     return res.status(400).json({
       message: 'Password must be at least 8 characters long and include at least one uppercase letter, one lowercase letter, one number, and one special character.',
     });
@@ -158,30 +159,32 @@ app.post('/register', async (req, res) => {
 
 // Login endpoint
 app.post('/login', async (req, res) => {
-  const { username, password } = req.body;
-  if (!username || !password) {
-    return res.status(400).json({ message: 'Username and password required' });
-  }
-
+  console.log('Received request: POST /login');
   try {
+    const { username, password } = req.body;
+    console.log('Login attempt for username:', username);
+
+    // Find the user in MongoDB
     const user = await User.findOne({ username });
     if (!user) {
-      return res.status(400).json({ message: 'Invalid username or password' });
+      console.log('User not found:', username);
+      return res.status(401).json({ message: 'Invalid username or password' });
     }
 
-    const match = await bcrypt.compare(password, user.password);
-    if (!match) {
-      return res.status(400).json({ message: 'Invalid username or password' });
+    // Compare the password
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch) {
+      console.log('Invalid password for username:', username);
+      return res.status(401).json({ message: 'Invalid username or password' });
     }
 
-    const token = jwt.sign(
-      { id: user._id, username: user.username },
-      process.env.JWT_SECRET || 'your_secret_key_here',
-      { expiresIn: '1h' }
-    );
-    res.json({ token });
-  } catch (err) {
-    console.error('Login error:', err);
+    // Generate a JWT token
+    const token = jwt.sign({ userId: user._id }, process.env.JWT_SECRET, { expiresIn: '1h' });
+    console.log('Login successful for username:', username, 'Token generated:', token);
+
+    res.status(200).json({ token });
+  } catch (error) {
+    console.error('Error during login:', error);
     res.status(500).json({ message: 'Server error' });
   }
 });
