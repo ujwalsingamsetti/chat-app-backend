@@ -27,12 +27,13 @@ app.use((req, res, next) => {
   next();
 });
 app.use(express.json());
+
 app.use(cors({
   origin: (origin, callback) => {
     const allowedOrigins = [
       'http://localhost:3000', // For local development
       'https://venerable-donut-3b4f8a.netlify.app', // Your Netlify domain
-      // Add your custom domain if you’ve set one up, e.g., 'https://www.yourdomain.com'
+      'https://chat.ujwal.info', // Your custom domain
     ];
     if (!origin || allowedOrigins.includes(origin)) {
       callback(null, true);
@@ -41,6 +42,8 @@ app.use(cors({
     }
   },
   credentials: true,
+  methods: ['GET', 'POST', 'OPTIONS'], // Explicitly allow these methods
+  allowedHeaders: ['Content-Type', 'Authorization'], // Allow these headers
 }));
 
 // Root route
@@ -80,14 +83,25 @@ const Reaction = mongoose.model('Reaction', reactionSchema);
 
 // Initialize server
 const server = require('http').createServer(app);
+
 const io = new Server(server, {
   cors: {
-    origin: process.env.FRONTEND_URL || 'https://venerable-donut-3b4f8a.netlify.app',
+    origin: (origin, callback) => {
+      const allowedOrigins = [
+        'http://localhost:3000', // For local development
+        'https://venerable-donut-3b4f8a.netlify.app', // Your Netlify domain
+        'https://chat.ujwal.info', // Your custom domain
+      ];
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error('Not allowed by CORS'));
+      }
+    },
     methods: ['GET', 'POST'],
     credentials: true,
   },
 });
-
 // Online users array (in-memory, consider Redis for production)
 let onlineUsers = [];
 
