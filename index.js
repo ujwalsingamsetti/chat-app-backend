@@ -119,10 +119,19 @@ const authenticateToken = (req, res, next) => {
 };
 
 // Register endpoint
+// Register endpoint with strong password validation
 app.post('/register', async (req, res) => {
   const { username, password } = req.body;
   if (!username || !password) {
     return res.status(400).json({ message: 'Username and password required' });
+  }
+
+  // Strong password validation
+  const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
+  if (!passwordRegex.test(password)) {
+    return res.status(400).json({
+      message: 'Password must be at least 8 characters long and include at least one uppercase letter, one lowercase letter, one number, and one special character.',
+    });
   }
 
   try {
@@ -140,6 +149,7 @@ app.post('/register', async (req, res) => {
     res.status(500).json({ message: 'Server error' });
   }
 });
+
 
 // Login endpoint
 app.post('/login', async (req, res) => {
