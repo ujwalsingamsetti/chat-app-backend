@@ -3,234 +3,247 @@ const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const cors = require('cors');
-const { Server } = require('socket.io');
+const cookieParser = require('cookie-parser');
 const http = require('http');
+const { Server } = require('socket.io');
 
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: (origin, callback) => {
-      const allowedOrigins = [
-        'http://localhost:3000',
-        'https://venerable-donut-3b4f8a.netlify.app',
-        'https://chat.ujwal.info',
-      ];
-      if (!origin || allowedOrigins.includes(origin)) {
-        callback(null, true);
-      } else {
-        callback(new Error('Not allowed by CORS'));
-      }
-    },
-    methods: ['GET', 'POST'],
+    origin: [
+      'http://localhost:3000',
+      'https://venerable-donut-3b4f8a.netlify.app',
+      'https://chat.ujwal.info',
+    ],
+    methods: ['GET', 'POST', 'DELETE'],
     credentials: true,
   },
 });
 
 app.use(express.json());
+app.use(cookieParser());
 app.use(cors({
-  origin: (origin, callback) => {
-    const allowedOrigins = [
-      'http://localhost:3000',
-      'https://venerable-donut-3b4f8a.netlify.app',
-      'https://chat.ujwal.info',
-    ];
-    if (!origin || allowedOrigins.includes(origin)) {
-      callback(null, true);
-    } else {
-      callback(new Error('Not allowed by CORS'));
-    }
-  },
+  origin: [
+    'http://localhost:3000',
+    'https://venerable-donut-3b4f8a.netlify.app',
+    'https://chat.ujwal.info',
+  ],
   credentials: true,
   methods: ['GET', 'POST', 'OPTIONS', 'DELETE'],
   allowedHeaders: ['Content-Type', 'Authorization'],
 }));
 
-mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/chat-app', {
+// MongoDB Connection
+mongoose.connect(process.env.MONGO_URI || 'mongodb+srv://ujwal:ujwal@chat-app.0xknl.mongodb.net/?retryWrites=true&w=majority&appName=chat-app', {
   useNewUrlParser: true,
   useUnifiedTopology: true,
-});
+}).then(() => console.log('MongoDB connected successfully')).catch(err => console.error('MongoDB connection error:', err));
 
-const UserSchema = new mongoose.Schema({
+// Mongoose Schemas
+const userSchema = new mongoose.Schema({
   username: { type: String, required: true, unique: true },
   password: { type: String, required: true },
 });
-const User = mongoose.model('User', UserSchema);
+const User = mongoose.model('User', userSchema);
 
-const MessageSchema = new mongoose.Schema({
-  username: String,
-  message: String,
-  timestamp: { type: Date, default: Date.now },
-  recipientId: { type: String, default: null },
-  reactions: [{ username: String, reaction: String }],
+const messageSchema = new mongoose.Schema({
+  sender: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  content: { type: String, required: true },
+  recipient: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+  room: { type: String, default: 'public' },
+  messageId: { type: String },
+  createdAt: { type: Date, default: Date.now },
 });
-const Message = mongoose.model('Message', MessageSchema);
+const Message = mongoose.model('Message', messageSchema);
 
+// Middleware
 const authenticateToken = (req, res, next) => {
-  const token = req.headers['authorization']?.split(' ')[1];
-  if (!token) return res.status(401).json({ message: 'No token provided' });
+  const token = req.cookies.token;
+  if (!token) return res.status(401).json({ message: 'Authentication failed' });
 
-  jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
-    if (err) return res.status(403).json({ message: 'Invalid token' });
-    req.user = user;
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your_jwt_secret');
+    req.userId = decoded.userId;
     next();
-  });
+  } catch (error) {
+    res.status(401).json({ message: 'Invalid token' });
+  }
 };
 
-app.post('/register', async (req, res) => {
-  console.log('Received request: POST /register');
+const authenticateSocket = async (socket, next) => {
+  try {
+    const token = socket.handshake.auth.token;
+    if (!token) return next(new Error('Authentication error: No token provided'));
+
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your_jwt_secret');
+    socket.userId = decoded.userId;
+    const user = await User.findById(socket.userId).select('username');
+    socket.user = user;
+    next();
+  } catch (error) {
+    next(new Error('Authentication error'));
+  }
+};
+
+// Routes
+app.post('/api/auth/register', async (req, res) => {
   try {
     const { username, password } = req.body;
-    console.log('Register attempt for username:', username);
-
     const hashedPassword = await bcrypt.hash(password, 10);
     const user = new User({ username, password: hashedPassword });
     await user.save();
-    console.log('User registered successfully:', username);
-
     res.status(201).json({ message: 'User registered successfully' });
   } catch (error) {
-    console.error('Error during registration:', error);
-    res.status(400).json({ message: 'Username already exists' });
+    res.status(400).json({ message: 'Error registering user', error: error.message });
   }
 });
 
-app.post('/login', async (req, res) => {
-  console.log('Received request: POST /login');
+app.post('/api/auth/login', async (req, res) => {
   try {
     const { username, password } = req.body;
-    console.log('Login attempt for username:', username);
-
     const user = await User.findOne({ username });
-    if (!user) {
-      console.log('User not found:', username);
-      return res.status(401).json({ message: 'Invalid username or password' });
+    if (!user || !(await bcrypt.compare(password, user.password))) {
+      return res.status(401).json({ message: 'Invalid credentials' });
     }
 
-    const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch) {
-      console.log('Invalid password for username:', username);
-      return res.status(401).json({ message: 'Invalid username or password' });
-    }
-
-    const token = jwt.sign({ userId: user._id }, process.env.JWT_SECRET, { expiresIn: '1h' });
-    console.log('Login successful for username:', username, 'Token generated:', token);
-
-    res.status(200).json({ token });
+    const token = jwt.sign({ userId: user._id, username: user.username }, process.env.JWT_SECRET || 'your_jwt_secret', { expiresIn: '1h' });
+    res.cookie('token', token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+    });
+    res.json({ token });
   } catch (error) {
-    console.error('Error during login:', error);
-    res.status(500).json({ message: 'Server error' });
+    res.status(500).json({ message: 'Error logging in', error: error.message });
   }
 });
 
-app.get('/messages', authenticateToken, async (req, res) => {
+app.post('/api/auth/logout', (req, res) => {
+  res.clearCookie('token', {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+  });
+  res.json({ message: 'Logged out successfully' });
+});
+
+app.get('/messages/:room?', authenticateToken, async (req, res) => {
   try {
-    const user = await User.findById(req.user.userId);
-    const recipientId = req.query.recipientId || null;
-    const messages = await Message.find({
+    const room = req.params.room || 'public';
+    const userId = req.userId;
+    let messages = await Message.find({
       $or: [
-        { recipientId: null }, // Public messages
-        { recipientId: user._id.toString() }, // Messages sent to the user
-        { recipientId: recipientId }, // Messages sent to the recipient
+        { room, recipient: null },
+        { recipient: userId },
+        { sender: userId, recipient: { $ne: null } },
       ],
-    }).sort({ timestamp: 1 });
+    })
+      .populate('sender', 'username')
+      .populate('recipient', 'username')
+      .sort({ createdAt: 1 });
+
+    messages = messages.filter(msg => msg.sender?.username && (!msg.recipient || msg.recipient?.username));
     res.json(messages);
   } catch (error) {
-    console.error('Error fetching messages:', error);
     res.status(500).json({ message: 'Server error' });
   }
 });
 
-app.delete('/clear-public-chat', authenticateToken, async (req, res) => {
+app.delete('/messages/public', authenticateToken, async (req, res) => {
   try {
-    // Delete all messages where recipientId is null (public chat messages)
-    await Message.deleteMany({ recipientId: null });
-    console.log('Public chat messages cleared by user:', req.user.userId);
-
-    // Emit a Socket.IO event to notify all connected clients
-    io.emit('publicChatCleared');
-    console.log('Emitted publicChatCleared event to all clients');
-
-    res.status(200).json({ message: 'Public chat cleared successfully' });
+    await Message.deleteMany({ room: 'public', recipient: null });
+    io.to('public').emit('chat-cleared');
+    res.json({ message: 'Public chat cleared' });
   } catch (error) {
-    console.error('Error clearing public chat:', error);
-    res.status(500).json({ message: 'Server error' });
+    res.status(500).json({ message: 'Error clearing public chat' });
   }
 });
+
+// Socket.IO Logic
+const onlineUsers = new Map();
+io.use(authenticateSocket);
 
 io.on('connection', (socket) => {
   console.log('User connected:', socket.id);
 
+  onlineUsers.set(socket.id, { userId: socket.userId, username: socket.user?.username });
+  io.emit('online-users', Array.from(onlineUsers.values()));
+
+  socket.on('join-room', (room) => {
+    socket.join(room || 'public');
+  });
+
+  socket.on('message', async (msg) => {
+    try {
+      if (!socket.userId || !msg.content) return;
+
+      if (msg.id) {
+        const existingMessage = await Message.findOne({ messageId: msg.id });
+        if (existingMessage) return;
+      }
+
+      const messageData = new Message({
+        sender: socket.userId,
+        content: msg.content,
+        recipient: msg.recipient || null,
+        room: msg.recipient ? null : msg.room || 'public',
+        messageId: msg.id,
+      });
+      await messageData.save();
+
+      const populatedMessage = await Message.findById(messageData._id)
+        .populate('sender', 'username')
+        .populate('recipient', 'username');
+      const messageToEmit = { ...populatedMessage.toObject(), id: msg.id };
+
+      if (msg.recipient) {
+        const recipientSocketId = Array.from(onlineUsers.entries())
+          .find(([_, user]) => user.userId.toString() === msg.recipient.toString())?.[0];
+        if (recipientSocketId) {
+          io.to(recipientSocketId).emit('message', messageToEmit);
+        }
+        io.to(socket.id).emit('message', messageToEmit);
+      } else {
+        io.to(messageData.room).emit('message', messageToEmit);
+      }
+    } catch (err) {
+      console.error('Socket message error:', err.message);
+    }
+  });
+
+  socket.on('typing', ({ recipientId }) => {
+    const user = onlineUsers.get(socket.id);
+    if (user) {
+      if (recipientId) {
+        const recipientSocketId = Array.from(onlineUsers.entries())
+          .find(([_, u]) => u.userId === recipientId)?.[0];
+        if (recipientSocketId) {
+          io.to(recipientSocketId).emit('typing', user.username);
+        }
+      } else {
+        io.to('public').emit('typing', user.username);
+      }
+    }
+  });
+
+  socket.on('stopTyping', ({ recipientId }) => {
+    if (recipientId) {
+      const recipientSocketId = Array.from(onlineUsers.entries())
+        .find(([_, u]) => u.userId === recipientId)?.[0];
+      if (recipientSocketId) {
+        io.to(recipientSocketId).emit('stopTyping');
+      }
+    } else {
+      io.to('public').emit('stopTyping');
+    }
+  });
+
   socket.on('disconnect', () => {
     console.log('User disconnected:', socket.id);
-    io.emit('onlineUsers', Array.from(io.sockets.sockets).map(([id, s]) => ({
-      id,
-      username: s.username,
-    })));
+    onlineUsers.delete(socket.id);
+    io.emit('online-users', Array.from(onlineUsers.values()));
   });
-
-  socket.on('sendMessage', async (data) => {
-    const token = socket.handshake.auth.token;
-    try {
-      const decoded = jwt.verify(token, process.env.JWT_SECRET);
-      const user = await User.findById(decoded.userId);
-      const message = new Message({
-        username: user.username,
-        message: data.message,
-        recipientId: data.recipientId || null,
-      });
-      await message.save();
-      io.emit('newMessage', { ...message._doc, id: message._id });
-    } catch (error) {
-      console.error('Error sending message:', error);
-    }
-  });
-
-  socket.on('react', async (data) => {
-    try {
-      const message = await Message.findById(data.messageId);
-      if (message) {
-        const token = socket.handshake.auth.token;
-        const decoded = jwt.verify(token, process.env.JWT_SECRET);
-        const user = await User.findById(decoded.userId);
-        message.reactions.push({ username: user.username, reaction: data.reaction });
-        await message.save();
-        io.emit('newReaction', { messageId: data.messageId, username: user.username, reaction: data.reaction });
-      }
-    } catch (error) {
-      console.error('Error adding reaction:', error);
-    }
-  });
-
-  socket.on('typing', async(data) => {
-    const token = socket.handshake.auth.token;
-    try {
-      const decoded = jwt.verify(token, process.env.JWT_SECRET);
-      const user = await User.findById(decoded.userId);
-      socket.broadcast.emit('typing', user.username);
-    } catch (error) {
-      console.error('Error handling typing event:', error);
-    }
-  });
-
-  socket.on('stopTyping', () => {
-    socket.broadcast.emit('stopTyping');
-  });
-
-  const token = socket.handshake.auth.token;
-  try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    const user = User.findById(decoded.userId);
-    socket.username = user.username;
-    io.emit('onlineUsers', Array.from(io.sockets.sockets).map(([id, s]) => ({
-      id,
-      username: s.username,
-    })));
-  } catch (error) {
-    console.error('Socket authentication error:', error);
-    socket.emit('connect_error', { message: 'Authentication error: Invalid token' });
-    socket.disconnect();
-  }
 });
 
 const PORT = process.env.PORT || 5500;
