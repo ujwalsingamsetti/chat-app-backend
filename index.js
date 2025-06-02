@@ -35,10 +35,9 @@ app.use(cors({
 }));
 
 // MongoDB Connection
-mongoose.connect(process.env.MONGO_URI || 'mongodb+srv://ujwal:ujwal@chat-app.0xknl.mongodb.net/?retryWrites=true&w=majority&appName=chat-app', {
-  useNewUrlParser: true,
-  useUnifiedTopology: true,
-}).then(() => console.log('MongoDB connected successfully')).catch(err => console.error('MongoDB connection error:', err));
+mongoose.connect(process.env.MONGO_URI)
+  .then(() => console.log('MongoDB connected successfully'))
+  .catch(err => console.error('MongoDB connection error:', err));
 
 // Mongoose Schemas
 const userSchema = new mongoose.Schema({
@@ -246,5 +245,5 @@ io.on('connection', (socket) => {
   });
 });
 
-const PORT = process.env.PORT || 5500;
+const PORT = process.env.PORT;
 server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
