@@ -15,6 +15,7 @@ const io = new Server(server, {
       'http://localhost:3000',
       'https://venerable-donut-3b4f8a.netlify.app',
       'https://chat.ujwal.info',
+      'https://chat-app-37ea73.netlify.app', // Added new Netlify URL
     ],
     methods: ['GET', 'POST', 'DELETE'],
     credentials: true,
@@ -28,6 +29,7 @@ app.use(cors({
     'http://localhost:3000',
     'https://venerable-donut-3b4f8a.netlify.app',
     'https://chat.ujwal.info',
+    'https://chat-app-37ea73.netlify.app', // Added new Netlify URL
   ],
   credentials: true,
   methods: ['GET', 'POST', 'OPTIONS', 'DELETE'],
